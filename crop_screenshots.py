@@ -31,8 +31,55 @@ try:
 except ImportError:
     sys.exit("[FAIL] Brak Pillow. Zainstaluj: pip install Pillow")
 
+# OpenCV jest opcjonalne - jak jest, uzywamy edge detection (precyzyjniej).
+# Jak nie ma - fallback na heurystyke jasnosci.
+try:
+    import cv2
+    import numpy as np
+    HAS_CV = True
+except ImportError:
+    HAS_CV = False
+
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+
+
+def find_chrome_boundary_cv(img_path):
+    # type: (Path) -> Optional[Tuple[int, int]]
+    """OpenCV: znajdz granice przez detekcje poziomych krawedzi (Canny).
+
+    Chrome przegladarki ma duzo elementow z poziomymi krawedziami (tabs,
+    pasek URL, bookmarks). Taskbar/dock ma wyrazna gorna krawedz.
+    Szukamy wierszy, w ktorych co najmniej polowa pikseli to krawedzie.
+    """
+    if not HAS_CV:
+        return None
+    gray = cv2.imread(str(img_path), cv2.IMREAD_GRAYSCALE)
+    if gray is None:
+        return None
+    h, w = gray.shape
+    edges = cv2.Canny(gray, 50, 150)
+    # ile pikseli krawedzi w kazdym wierszu, znormalizowane do [0,1]
+    row_density = (edges > 0).sum(axis=1).astype(float) / max(1, w)
+    threshold = 0.5
+
+    # Gora: ostatni "mocny" poziomy wiersz w gornych 30% (= koniec chrome).
+    y_top = 0
+    top_limit = int(h * 0.30)
+    for y in range(top_limit - 1, -1, -1):
+        if row_density[y] >= threshold:
+            y_top = min(y + 1, h)
+            break
+
+    # Dol: pierwszy "mocny" poziomy wiersz w dolnych 25% (= gora taskbara).
+    y_bot = h
+    bot_start = int(h * 0.75)
+    for y in range(bot_start, h):
+        if row_density[y] >= threshold:
+            y_bot = y
+            break
+
+    return y_top, y_bot
 
 
 def find_chrome_boundary(img):
@@ -221,10 +268,16 @@ def warn_no_files(src, pattern):
 def auto_boxes(files):
     # type: (List[Path]) -> List[Tuple[Path, Tuple[int, int, int, int]]]
     """Auto-wykryj wspolny crop dla wszystkich plikow."""
+    mode = "OpenCV edges" if HAS_CV else "brightness fallback"
+    print(f"[INFO] Auto detection: {mode}")
     rows = []
     for f in files:
+        cv_result = find_chrome_boundary_cv(f) if HAS_CV else None
         with Image.open(f) as img:
-            y_top, y_bot = find_chrome_boundary(img)
+            if cv_result is not None:
+                y_top, y_bot = cv_result
+            else:
+                y_top, y_bot = find_chrome_boundary(img)
             rows.append((f, img.size, y_top, y_bot))
             print(f"  {f.name}: {img.size}  top={y_top}  bot={y_bot}  H={y_bot - y_top}")
 
@@ -273,6 +326,9 @@ def process(src, pattern, out, manual):
     if manual:
         items = manual_boxes(files)
     else:
+        if not HAS_CV:
+            print("[HINT] Zainstaluj OpenCV dla lepszej auto-detekcji:")
+            print("       pip install opencv-python numpy")
         items = auto_boxes(files)
 
     if not items:
