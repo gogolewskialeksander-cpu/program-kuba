@@ -17,11 +17,10 @@ Domyslnie:
       i dol (start taskbara/docka = ostatni czysto czarny wiersz)
     - uzywa wspolnych granic dla wszystkich plikow (rowne wysokosci - dobre do siatki)
 """
-from __future__ import annotations
-
 import argparse
 import sys
 from pathlib import Path
+from typing import Optional, Tuple
 
 try:
     from PIL import Image
@@ -29,7 +28,8 @@ except ImportError:
     sys.exit("[FAIL] Brak Pillow. Zainstaluj: pip install Pillow")
 
 
-def find_chrome_boundary(img: Image.Image) -> tuple[int, int]:
+def find_chrome_boundary(img):
+    # type: (Image.Image) -> Tuple[int, int]
     """Znajdz y_top (koniec chrome) i y_bot (start taskbara/docka).
 
     Zalozenie: strona ma ciemne (czarne) tlo. Chrome przegladarki to jasne tlo
@@ -118,7 +118,8 @@ def crop_folder(src: Path, pattern: str, out: Path) -> int:
     return 0
 
 
-def pick_folder_gui() -> Path | None:
+def pick_folder_gui():
+    # type: () -> Optional[Path]
     """Pokaz GUI do wyboru folderu (dwuklik na .py bez argumentow)."""
     try:
         import tkinter as tk
